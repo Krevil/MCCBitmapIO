@@ -1,14 +1,15 @@
 # MCCBitmapIO
 Automated bitmap (dds) extraction and importation
 
-Current features:
+## Current features:
 
-Extraction
-Decompression
+- Extraction
+- Decompression
 
-Planned features:
+## Planned features:
 
-Automatically get tag offsets from map file
-Create DDS header from bitmap tag
-Compression
-Importation
+
+- Automatically get tag offsets from map file
+- Create DDS header from bitmap tag
+- Compression
+- Importation
