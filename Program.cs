@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Globalization;
+using System.Linq;
 
 namespace BitmapIO
 {
@@ -22,22 +24,36 @@ namespace BitmapIO
             {
 
             }
-            Console.WriteLine("Enter the name of the map you wish to extract a bitmap from");
-            ExtractBitmap(GetFile());
+            Console.WriteLine("Extract or import?");
+            string response = Console.ReadLine();
+            switch (response.ToLower())
+            {
+                case "extract":
+                    Console.WriteLine("Enter the name of the map you wish to extract a bitmap from");
+                    ExtractBitmap(GetFile());
+                    break;
+                case "import":
+                    Console.WriteLine("Enter the name of the image file and then the map you wish to import it to");
+                    ImportBitmap(GetFile(), GetFile());
+                    break;
+                default:
+                    Console.WriteLine("Please type either extract or import");
+                    break;
 
-            
+
+            }       
         }
 
         public static void ExtractBitmap(string FileName) //Extracts a bitmap, decompresses it, creates a DDS header and saves it to the drive for editing
         {
 
-            Console.WriteLine("Enter the Tag Resources offset as an int for the map (found in the Zone tag)"); //These will eventually be replaced by something better
+            Console.WriteLine("Enter the Tag Resources offset for the map (found in the Zone tag)"); //These will eventually be replaced by something better
             int TagResource = GetInt();
 
-            Console.WriteLine("Enter the Segments offset as an int for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
+            Console.WriteLine("Enter the Segments offset for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
             int Segments = GetInt();
 
-            Console.WriteLine("Enter the Raw Pages offset as an int for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
+            Console.WriteLine("Enter the Raw Pages offset for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
             int RawPages = GetInt();
 
             Console.WriteLine("Enter the Asset Datum Index for the bitmap you want to extract"); //This one will probably stay until I can have it read tag names instead which will be quite a journey.
@@ -235,7 +251,7 @@ namespace BitmapIO
 
             1947B4DC = tag resources = 424129756
 
-            195F5C3C = segments = 423545900
+            193ECC2C = segments = 423545900
 
             19367524 = raw pages = 422999332
 
@@ -246,21 +262,17 @@ namespace BitmapIO
 
         public static void ImportBitmap(string DDSName, string FileName)
         {
-            FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
-            byte[] DDSBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
-            DDSStream.Read(DDSBytes, 0, DDSBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
-            DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
 
-            Console.WriteLine("Enter the Tag Resources offset as an int for the map (found in the Zone tag)"); //These will eventually be replaced by something better
+            Console.WriteLine("Enter the Tag Resources offset for the map. (found in the Zone tag)"); //These will eventually be replaced by something better
             int TagResource = GetInt();
 
-            Console.WriteLine("Enter the Segments offset as an int for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
+            Console.WriteLine("Enter the Segments offset for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
             int Segments = GetInt();
 
-            Console.WriteLine("Enter the Raw Pages offset as an int for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
+            Console.WriteLine("Enter the Raw Pages offset for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
             int RawPages = GetInt();
 
-            Console.WriteLine("Enter the Asset Datum Index for the bitmap you want to extract"); //This one will probably stay until I can have it read tag names instead which will be quite a journey.
+            Console.WriteLine("Enter the Asset Datum Index for the bitmap you want to import to"); //This one will probably stay until I can have it read tag names instead which will be quite a journey.
             int AssetIndex = GetInt();
 
             int ResourceSegmentOffset = (AssetIndex * 64) + TagResource + 34; //Multiplies the index by the bytes in each block to get to the one we want, then adds 34 so we can get to the 
@@ -312,24 +324,136 @@ namespace BitmapIO
                 Console.WriteLine("Secondary CRC Checksum: " + SecondaryCRCChecksum);
             }
 
-            Console.WriteLine("Inject into primary or secondary page?");
+            bool SecondaryPageSelected = false;
+            bool PrimaryPageSelected = false;
+
+            while (PrimaryPageIndex > 0 && SecondaryPageIndex > 0 && PrimaryPageSelected == false && SecondaryPageSelected == false) //Some have both, where one page is a mipmap.
+            {
+                Console.WriteLine("Primary and Secondary pages available. Choose one (secondary recomended if you're not sure)"); //Asks the user which one they want if there's both
+                Console.WriteLine("Type 1 for the Primary Page or 2 for the Secondary Page");
+                try
+                {
+                    int answer = Convert.ToInt32(Console.ReadLine()); //Because I just know people will try to type a character instead.
+                    switch (answer)
+                    {
+                        case 1:
+                            PrimaryPageSelected = true;
+                            break;
+                        case 2:
+                            SecondaryPageSelected = true;
+                            break;
+                        default:
+                            Console.WriteLine("Please type either 1 or 2");
+                            break;
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine("Please type a number.");
+                }
+
+
+            }
+
+            if (SecondaryPageSelected == true)
+            {
+                Console.WriteLine("Attempting to inject Secondary Page");
+                MapFS.Seek(SecondaryBlockOffset, 0); //Head over to the offset where the dds data starts
+
+                FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
+                byte[] DDSDecompressedBytes = new byte[SecondaryUncompressedBlockSize + 128]; //Empty byte array of the same size as the DDS file
+                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
+                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
+                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
+
+
+                byte[] DDSCompressedBytes = new byte[SecondaryCompressedBlockSize]; //Byte array to hold the recompressed data
+
+                using MemoryStream ms1 = new MemoryStream(DDSDecompressedBytes);
+                {
+                    using FileStream fs2 = new FileStream("TemporaryFile", FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
+                    {
+                        using DeflateStream ds1 = new DeflateStream(fs2, CompressionMode.Compress, true); //compress
+                        {
+                            ms1.CopyTo(ds1);
+                        }
+                    }
+                }
+
+                FileStream fs3 = new FileStream("TemporaryFile", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+
+                fs3.Read(DDSCompressedBytes, 0, SecondaryCompressedBlockSize);
+
+                MapFS.Write(DDSCompressedBytes, 0, SecondaryCompressedBlockSize); //Writes our imported DDS into the file
+                MapFS.Close();
+                File.Delete("TemporaryFile");
+
+                //0x1F9EF198 = tag resources 0x1F90B120 = segments 0x1F8635D0 = raw pages 725 = smg index
+            }
+            if (PrimaryPageSelected == true)
+            {
+                Console.WriteLine("Attempting to inject Primary Page");
+                MapFS.Seek(PrimaryBlockOffset, 0); //Head over to the offset where the dds data starts
+
+                FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
+                byte[] DDSDecompressedBytes = new byte[PrimaryUncompressedBlockSize + 128]; //Empty byte array of the same size as the DDS file
+                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
+                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
+                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
+
+
+                byte[] DDSCompressedBytes = new byte[PrimaryCompressedBlockSize]; //Byte array to hold the recompressed data
+
+                using MemoryStream ms1 = new MemoryStream(DDSDecompressedBytes);
+                {
+                    using FileStream fs2 = new FileStream("TemporaryFile", FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
+                    {
+                        using DeflateStream ds1 = new DeflateStream(fs2, CompressionMode.Compress, true); //compress
+                        {
+                            ms1.CopyTo(ds1);
+                        }
+                    }
+                }
+
+                FileStream fs3 = new FileStream("TemporaryFile", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+
+                fs3.Read(DDSCompressedBytes, 0, PrimaryCompressedBlockSize);
+
+                MapFS.Write(DDSCompressedBytes, 0, PrimaryCompressedBlockSize); //Writes our imported DDS into the file
+                MapFS.Close();
+                File.Delete("TemporaryFile");
+            }
         }
 
 
 
-        public static int GetInt() //Attempts to get an int from the user and restarts the loop if it's 0 or not a number
+            public static int GetInt() //Attempts to get an int from the user and restarts the loop if it's 0 or not a number
         {
             int myInt = 0;
             bool assigned = false;
-            while (assigned == false)
+            while (assigned == false) //So it can keep trying rather than close the program
             {
                 try
                 {
-                    myInt = Convert.ToInt32(Console.ReadLine());
+                    char hex1 = '0'; //Silly workaround. Why can't you just use if (myString[0] == "0")?
+                    char hex2 = 'x';
+                    string myString = Console.ReadLine(); //Read a string from the user
+                    if (myString[0] == hex1 && myString[1] == hex2) //If the string starts with 0x do this
+                    {
+                        string newString = myString.Remove(0, 2); //Remove the 0x so it can be parsed
+                        myInt = int.Parse(newString, NumberStyles.HexNumber); //Translates the hex string into an int
+
+                    }
+                    else
+                    {
+                        myInt = Convert.ToInt32(myString); //If it doesn't start with 0x, we presume the user is using an int to begin with
+                    }
+                    
                 }
-                catch
+                catch //If something goes wrong, do this
                 {
-                    Console.WriteLine("Please specify a numeric value above 0");
+                    
+                    Console.WriteLine("Error: Please specify a numeric value above 0"); //Error so we know something is messing up rather than the neccesarily the user
                     continue;
                 }
                 if (myInt == 0)
@@ -337,12 +461,12 @@ namespace BitmapIO
                     Console.WriteLine("Please specify a numeric value above 0");
                     continue;
                 }
-                if (myInt > 0)
+                if (myInt > 0) //If the int has been assigned, we can move on and not stay in this while loop
                 {
                     assigned = true;
                 }
             }
-            return myInt;
+            return myInt; //Yay, you now have an int you can use at long last.
         }
 
         public static string GetFile() //Attempts to get a valid string from the console to use as input
