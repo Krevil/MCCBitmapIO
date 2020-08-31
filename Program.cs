@@ -409,7 +409,12 @@ namespace BitmapIO
                 CompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
                 CompressedStream.Read(DDSCompressedBytes, 0, CompressedBytesLength);
                 //File.WriteAllBytes("TempBytesFile", DDSCompressedBytes);
-                
+
+                if (CompressedBytesLength > CompressedSize)
+                    throw new Exception("File too large");
+                if (DecompressedBytesLength > UncompressedSize)
+                    throw new Exception("File too large");
+
                 MapFS.Write(DDSCompressedBytes, 0, CompressedBytesLength); //Writes our imported DDS into the file
 
                 byte[] DecompressedLengthBytes = BitConverter.GetBytes(DecompressedBytesLength);
@@ -423,10 +428,6 @@ namespace BitmapIO
 
                 //MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0x10, 0);
                 //MapFS.Write(DecompressedLengthBytes, 0, 4);
-                if (CompressedBytesLength > CompressedSize)
-                    Console.WriteLine("File too large");
-                if (DecompressedBytesLength > UncompressedSize)
-                    Console.WriteLine("File too large");
             }
             else if (mode != "e" && mode != "extract" && mode != "i" && mode != "import")
             {
