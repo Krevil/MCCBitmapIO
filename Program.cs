@@ -9,43 +9,34 @@ namespace BitmapIO
     class Program
     {
         public static bool debug = false;
-        static void Main(string[] args)
+        public static string mode = "none";
+        static void Main(string[] args) //shitty system to start off by trying to use args and then if that fucks up go with directly asking the user for input
         {
             try
             {
-                if (args[0] == "debug") //Displays read values and creates extra files that would otherwise be skipped
-                {
-                    debug = true;
-                    Console.WriteLine("Debug enabled");
-                }
+                string mapName = args[0];
+                mode = args[1];
+                ReadMap(mapName);
             }
             catch
             {
-
+                Console.WriteLine("Please specify a map to use");
+                string mapName = Console.ReadLine();
+                Console.WriteLine("Extract or import?");
+                mode = Convert.ToString(Console.ReadLine());
+                if (mode != "e" && mode != "extract" && mode != "i" && mode != "import")
+                {
+                    throw new Exception("You must choose either import or extract.");
+                }
+                ReadMap(mapName);
             }
-            Console.WriteLine("Extract or import?");
-            string response = Console.ReadLine();
-            switch (response.ToLower())
-            {
-                case "extract":
-                    Console.WriteLine("Enter the name of the map you wish to extract a bitmap from");
-                    ExtractBitmap(GetFile());
-                    break;
-                case "import":
-                    Console.WriteLine("Enter the name of the image file and then the map you wish to import it to");
-                    ImportBitmap(GetFile(), GetFile());
-                    break;
-                default:
-                    Console.WriteLine("Please type either extract or import");
-                    break;
 
-
-            }
         }
 
         public static void ReadMap(string mapName) //actual main thing
         {
             FileStream MapFS = new FileStream(mapName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //opens the target map in a filestream
+
             /*Console.WriteLine("What offset would you like to get?");
             string inputoffset = Console.ReadLine();
             long offset = long.Parse(inputoffset, NumberStyles.HexNumber);*/
@@ -107,8 +98,12 @@ namespace BitmapIO
 
             int ZoneTagGroup = ZoneGroupTagLookUp(MapFS, tag_group_table_address_real, group_tag_count);
 
-            ZoneTagLookUp(MapFS, address_mask, tag_table_address_real, tag_count, ZoneTagGroup);
+            long ZoneTagAddress = ZoneTagLookUp(MapFS, address_mask, tag_table_address_real, tag_count, ZoneTagGroup);
 
+            Console.WriteLine("Enter a Asset Datum Index for the bitmap you want to extract or import");
+            int AssetIndex = Convert.ToInt32(Console.ReadLine());
+
+            ReadZone(MapFS, address_mask, ZoneTagAddress, tag_table_address_real, AssetIndex);
         }
         public static string ArrayToHex(byte[] array) //Converts the contents of an array to a hexadecimal string
         {
@@ -120,7 +115,7 @@ namespace BitmapIO
             uint myInt = BitConverter.ToUInt32(array);
             return myInt.ToString();
         }
-        public static int TagLookUp(FileStream MapFS, long tag_table_address_real, int tagIndex)
+        public static byte[] TagLookUp(FileStream MapFS, long tag_table_address_real, int tagIndex)
         {
             long IndexOffset = tag_table_address_real + (tagIndex * 0x8);
             for (long i = tag_table_address_real; i <= IndexOffset; i += 0x8) //loops through each element in the tag table looking for the tag index
@@ -136,10 +131,10 @@ namespace BitmapIO
                     byte[] memoryaddress = new byte[0x4];
                     MapFS.Read(memoryaddress, 0, 4);
                     //Console.WriteLine("Tag group index is: {0}", BitConverter.ToString(group_magic));
-                    return BitConverter.ToInt32(memoryaddress);
+                    return memoryaddress;
                 }
             }
-            return 0;
+            return new byte[0];
         }
         public static int ZoneGroupTagLookUp(FileStream MapFS, long tag_group_table_address_real, byte[] group_tag_count)
         {
@@ -152,7 +147,7 @@ namespace BitmapIO
                 MapFS.Read(group_magic, 0, 4); //read for whatever reason equates to "store this thing in a byte array"
                 if (BitConverter.ToInt32(enoz) == BitConverter.ToInt32(group_magic)) //this really should work without the bitconversion but fuck it
                 {
-                    Console.WriteLine("Zone is: {0}", iterations);
+                    //Console.WriteLine("Zone is: {0}", iterations);
                     return iterations;
                 }
                 iterations++; //has to be at the end (after the return) or you end up getting the wrong number
@@ -180,42 +175,102 @@ namespace BitmapIO
             }
             return 0;
         }
-        public static long ReadZone(FileStream MapFS, long address_mask, long tag_memory_address_real, long tag_table_address_real, int AssetIndex)
+        public static void ReadZone(FileStream MapFS, long address_mask, long tag_memory_address_real, long tag_table_address_real, int AssetIndex)
         {
+            //Console.WriteLine(tag_memory_address_real);
             MapFS.Seek(tag_memory_address_real + 0x64, 0); //Go to tag offset plus the location of Tag Resources
             byte[] TagResourceCount = new byte[0x4];
             MapFS.Read(TagResourceCount, 0, 4); //Gets the number of entries in tag resources
-            int TagResourceCount_int = BitConverter.ToInt32(TagResourceCount);
+            //int TagResourceCount_int = BitConverter.ToInt32(TagResourceCount);
             byte[] TagResourceAddress = new byte[0x4];
             MapFS.Read(TagResourceAddress, 0, 4); //Gets the virtual address for the block
             long TagResourceAddress_real = GetTagAddress(TagResourceAddress, address_mask);
+            //Console.WriteLine(TagResourceAddress_real);
 
             MapFS.Seek(tag_memory_address_real + 0x58, 0); //Go to tag offset plus the location of Segments
             byte[] SegmentsCount = new byte[0x4];
             MapFS.Read(SegmentsCount, 0, 4); //Gets the number of entries in segments
-            int SegmentsCount_int = BitConverter.ToInt32(SegmentsCount);
+            //int SegmentsCount_int = BitConverter.ToInt32(SegmentsCount);
             byte[] SegmentsAddress = new byte[0x4];
             MapFS.Read(SegmentsAddress, 0, 4); //Gets the virtual address for the block
             long SegmentsAddress_real = GetTagAddress(SegmentsAddress, address_mask);
+            //Console.WriteLine(SegmentsAddress_real);
 
             MapFS.Seek(tag_memory_address_real + 0x34, 0); //Go to tag offset plus the location of raw pages
             byte[] RawPagesCount = new byte[0x4];
             MapFS.Read(RawPagesCount, 0, 4); //Gets the number of entries in raw pages
-            int RawPagesCount_int = BitConverter.ToInt32(RawPagesCount);
+            //int RawPagesCount_int = BitConverter.ToInt32(RawPagesCount);
             byte[] RawPagesAddress = new byte[0x4];
             MapFS.Read(RawPagesAddress, 0, 4); //Gets the virtual address for the block
-            long RawPagesAddress_real = GetTagAddress(SegmentsAddress, address_mask);
+            long RawPagesAddress_real = GetTagAddress(RawPagesAddress, address_mask);
+            //Console.WriteLine(RawPagesAddress_real);
 
-            //Now we have all we need from Zone for now
-
-            MapFS.Seek(TagResourceAddress_real + (0xA4 * AssetIndex) + 0xC, 0); //Go to the tag resource block plus the Asset Index times the size of the block and then to the datum index
-            byte[] Datum = new byte[0x4]; //We skip the parent group because we don't care what it is. Though it wouldn't be a bad idea to check if it is indeed mtib (bitm).
+            MapFS.Seek(TagResourceAddress_real + (0x40 * AssetIndex) + 0x0, 0);
+            byte[] TagRefGroup = new byte[0x4];
+            MapFS.Read(TagRefGroup, 0, 4);
+            if (BitConverter.ToInt32(TagRefGroup) != 1651078253)
+            {
+                throw new Exception("Datum Index refers to non-bitmap tag - are you sure you're using the right number?"); //Makes sure we are finding a bitmap and not some other tag
+            }
+            MapFS.Seek(TagResourceAddress_real + (0x40 * AssetIndex) + 0xC, 0); //Go to the datum index as there's some empty space in between the group magic
+            byte[] Datum = new byte[0x4]; //Datums are confusing and weird.
             MapFS.Read(Datum, 0, 4);
+            MapFS.Seek(TagResourceAddress_real + (0x40 * AssetIndex) + 0x22, 0); //The segment index. Last thing we need from this block now.
+            byte[] SegmentIndex_byte = new byte[0x2];
+            MapFS.Read(SegmentIndex_byte, 0, 2);
+            int SegmentsIndex = BitConverter.ToInt16(SegmentIndex_byte); //Onwards
+            //Console.WriteLine("Segments Index: " + SegmentsIndex);
+
+            MapFS.Seek(SegmentsAddress_real + (SegmentsIndex * 0x10), 0); //Choo choo, we're at going to the segments block
+            //Console.WriteLine(SegmentsAddress_real);
+            byte[] PrimaryPageIndex = new byte[0x2]; //Now what to do with these? 
+            MapFS.Read(PrimaryPageIndex, 0, 2);
+            byte[] SecondaryPageIndex = new byte[0x2]; //For now, let's just grab one or the other.
+            MapFS.Read(SecondaryPageIndex, 0, 2);
+            int PageIndex = 0;
+
+            //We check here what page there is to be used. If there's a secondary page we'll extract and use that over the primary, otherwise we just use the primary.
+            if (BitConverter.ToInt16(SecondaryPageIndex) == 0 && BitConverter.ToInt16(PrimaryPageIndex) != 0)
+            {
+                PageIndex = BitConverter.ToInt16(PrimaryPageIndex);
+            }
+            if (BitConverter.ToInt16(SecondaryPageIndex) == 0 && BitConverter.ToInt16(PrimaryPageIndex) == 0)
+            {
+                throw new Exception("Something went wrong, no raw pages could be found"); //In case of weirdness
+            }
+            else if (BitConverter.ToInt16(SecondaryPageIndex) != 0)
+            {
+                PageIndex = BitConverter.ToInt16(SecondaryPageIndex);
+            }
+            if (PageIndex == 0)
+            {
+                throw new Exception("Something went wrong, page couldn't be chosen"); //In case of even more weirdness
+            }
+
+            //Console.WriteLine("Page Index: " + PageIndex);
+            MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0x8, 0); //Assuming the Page Index is assigned, go to it and then to the Block Offset, as that's what we need first
+            //Console.WriteLine(RawPagesAddress_real + (PageIndex * 0x58) + 0x8);
+            byte[] BlockOffset_byte = new byte[0x4]; //Place we go to for doing stuff with the bitmap
+            MapFS.Read(BlockOffset_byte, 0, 4);
+            byte[] CompressedSize_byte = new byte[0x4]; //The size it should be in the file
+            MapFS.Read(CompressedSize_byte, 0, 4);
+            byte[] UncompressedSize_byte = new byte[0x4]; //The size it should be when decompressed
+            MapFS.Read(UncompressedSize_byte, 0, 4);
+
+            int BlockOffset = BitConverter.ToInt32(BlockOffset_byte);
+            int CompressedSize = BitConverter.ToInt32(CompressedSize_byte);
+            int UncompressedSize = BitConverter.ToInt32(UncompressedSize_byte);
+            //Console.WriteLine(BlockOffset);
+            //Console.WriteLine("Uncompressed Size: " + UncompressedSize);
+            //Console.WriteLine("Compressed Size: " + CompressedSize);
+            //Moving on for a while, we need to go grab the bitmap info for remaking the DDS header. 
 
             int DatumIndex = BitConverter.ToInt32(Datum) & 0xFFFF; //Tag index. Don't ask. I don't know.
-            int TagMemoryAddress = TagLookUp(MapFS, tag_table_address_real, DatumIndex); //Gets the memory address for the referenced tag
+            byte[] TagMemoryAddress = TagLookUp(MapFS, tag_table_address_real, DatumIndex); //Gets the memory address for the referenced tag
+            long TagMemoryAddress_real = GetTagAddress(TagMemoryAddress, address_mask);
+            //Now we have all we need from Zone for now
 
-            MapFS.Seek(TagMemoryAddress + 0x60, 0); //Now we go to our tag from zone, then to it's tagblock for bitmaps so we can get the juicy information inside
+            MapFS.Seek(TagMemoryAddress_real + 0x60, 0); //Now we go to our tag from zone, then to it's tagblock for bitmaps so we can get the juicy information inside
             byte[] BitmapsCount = new byte[0x4]; //should just be 1 but idk. 
             MapFS.Read(BitmapsCount, 0, 4); 
             byte[] BitmapsAddress = new byte[0x4];
@@ -230,14 +285,153 @@ namespace BitmapIO
             byte[] BitmapDepthArray = new byte[0x1];
             MapFS.Read(BitmapDepthArray, 0, 1); //Idk about this. Also after this is more shit idk so for now we skip em and go straight to the format enums
             MapFS.Seek(BitmapsAddress_real + 0xC, 0);
-            byte[] BitmapFormat = new byte[0x2];
-            MapFS.Read(BitmapFormat, 0, 2); //this is an enum. 16 is DXT5 which is the ordinary but could be others.
-            byte[] BitmapFlags = new byte[0x2];
-            MapFS.Read(BitmapFlags, 0, 2); //Oh boy. This is gonna be fun to figure out. Like an enum but with multiple choice. (Actually not that bad, it's just addition)
-            
-            /*TO DO: Merge the methods into Extract Bitmap */
+            byte[] BitmapFormatArray = new byte[0x2];
+            MapFS.Read(BitmapFormatArray, 0, 2); //this is an enum. 16 is DXT5 which is the ordinary but could be others.
+            byte[] BitmapFlagsArray = new byte[0x2];
+            MapFS.Read(BitmapFlagsArray, 0, 2); //Oh boy. This is gonna be fun to figure out. Like an enum but with multiple choice. (Actually not that bad, it's just addition)
 
-            return 0;
+            /* int BitmapWidth = BitConverter.ToInt32(BitmapWidthArray);
+            int BitmapHeight = BitConverter.ToInt32(BitmapHeightArray);
+            int BitmapDepth = BitConverter.ToInt32(BitmapDepthArray);
+            int BitmapFormat = BitConverter.ToInt32(BitmapFormatArray);
+            int BitmapFlags = BitConverter.ToInt32(BitmapFlagsArray); */
+
+            //Now that we're done here, let's get to ripping out the headerless file
+
+            if (mode.ToLower() == "extract" || mode.ToLower() == "e")
+            {
+                MapFS.Seek(BlockOffset, 0); //Head over to the offset where our raw dds data starts
+                byte[] CompressedPageData = new byte[CompressedSize]; //A byte array allocated to the size of the compressed data
+                MapFS.Read(CompressedPageData, 0, CompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
+
+                byte[] DecompressedPageData = new byte[UncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
+
+                Console.WriteLine("Please specify a filename for the extracted file"); //Once the data has been decompressed and had the DDS header added, save with this file name
+                string OutputFile = Console.ReadLine(); //Should have a UI box that requires it to end with .dds
+
+                using MemoryStream SecondaryMemStream = new MemoryStream(CompressedPageData); //Create a new memory stream with the compressed data
+                {
+                    using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
+                    {
+
+                        DFSecondary.Read(DecompressedPageData, 128, UncompressedSize); //Read the decompressed data into a byte array
+                    }
+                }
+                //Header stuff, yay
+                for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
+                {
+                    switch (b)
+                    {
+                        case 0:
+                            DecompressedPageData[b] = 0x44;
+                            break;
+                        case 1:
+                            DecompressedPageData[b] = 0x44;
+                            break;
+                        case 2:
+                            DecompressedPageData[b] = 0x53;
+                            break;
+                        case 3:
+                            DecompressedPageData[b] = 0x20;
+                            break;
+                        case 4:
+                            DecompressedPageData[b] = 0x7C;
+                            break;
+                        case 8:
+                            DecompressedPageData[b] = 0x07;
+                            break;
+                        case 9:
+                            DecompressedPageData[b] = 0x10;
+                            break;
+                        case 0x0A:
+                            DecompressedPageData[b] = 0x08;
+                            break;
+                        case 0xC:
+                            DecompressedPageData[b] = BitmapHeightArray[0];
+                            break;
+                        case 0x0D:
+                            DecompressedPageData[b] = BitmapHeightArray[1];
+                            break;
+                        case 0x10:
+                            DecompressedPageData[b] = BitmapWidthArray[0];
+                            break;
+                        case 0x11:
+                            DecompressedPageData[b] = BitmapWidthArray[1];
+                            break;
+                        case 0x4C:
+                            DecompressedPageData[b] = 0x20;
+                            break;
+                        case 0x50:
+                            DecompressedPageData[b] = 0x04;
+                            break;
+                        case 0x54:
+                            DecompressedPageData[b] = 0x44;
+                            break;
+                        case 0x55:
+                            DecompressedPageData[b] = 0x58;
+                            break;
+                        case 0x56:
+                            DecompressedPageData[b] = 0x54;
+                            break;
+                        case 0x57:
+                            DecompressedPageData[b] = 0x35;
+                            break;
+                    }
+                }
+                File.WriteAllBytes(OutputFile, DecompressedPageData);
+            }
+            if (mode.ToLower() == "import" || mode.ToLower() == "i")
+            {
+                Console.WriteLine("Please type the name of the file you want to import");
+                string DDSName = Convert.ToString(Console.ReadLine());
+                MapFS.Seek(BlockOffset, 0); //Head over to the offset where our raw dds data starts
+                FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
+                byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
+                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
+                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
+                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
+
+
+                
+
+                MemoryStream DecompressedStream = new MemoryStream(DDSDecompressedBytes);
+
+                MemoryStream CompressedStream = new MemoryStream();
+
+                using (DeflateStream df1 = new DeflateStream(CompressedStream, CompressionMode.Compress, true))
+                {
+                    DecompressedStream.CopyTo(df1);
+                }
+                byte[] DDSCompressedBytes = new byte[CompressedStream.Length]; //Byte array to hold the recompressed data
+                int CompressedBytesLength = DDSCompressedBytes.Length;
+                int DecompressedBytesLength = DDSDecompressedBytes.Length;
+                //Console.WriteLine("Compressed size: {0} Uncompresssed size: {1}", CompressedBytesLength, DecompressedBytesLength);
+                CompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
+                CompressedStream.Read(DDSCompressedBytes, 0, CompressedBytesLength);
+                //File.WriteAllBytes("TempBytesFile", DDSCompressedBytes);
+                
+                MapFS.Write(DDSCompressedBytes, 0, CompressedBytesLength); //Writes our imported DDS into the file
+
+                byte[] DecompressedLengthBytes = BitConverter.GetBytes(DecompressedBytesLength);
+                byte[] CompressedLengthBytes = BitConverter.GetBytes(CompressedBytesLength);
+                byte[] CombinedBytes = CompressedLengthBytes.Concat(DecompressedLengthBytes).ToArray();
+
+                MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0xC, 0);
+                MapFS.Write(CombinedBytes, 0, 8); //Fuck this shit, why does it not let me write two things? Makes no goddamn sense
+                MapFS.Flush();
+
+
+                //MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0x10, 0);
+                //MapFS.Write(DecompressedLengthBytes, 0, 4);
+                if (CompressedBytesLength > CompressedSize)
+                    Console.WriteLine("File too large");
+                if (DecompressedBytesLength > UncompressedSize)
+                    Console.WriteLine("File too large");
+            }
+            else if (mode != "e" && mode != "extract" && mode != "i" && mode != "import")
+            {
+                Console.WriteLine("Neither extract or import was selected");
+            }
         }
         public static long GetTagAddress(byte[] tag_memory_address, long address_mask) //specifically for tags and tagblocks because of the int32 and * 4 requirement
         {
@@ -247,402 +441,7 @@ namespace BitmapIO
             return tag_memory_address_real; //now this is the real address.
         }
 
-        //All the old stuff below here
-
-        public static void ExtractBitmap(string FileName) //Extracts a bitmap, decompresses it, creates a DDS header and saves it to the drive for editing
-        {
-            FileStream MapFS = new FileStream(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //The map read into a filestream
-
-            byte[] MapBytes = new byte[MapFS.Length]; //The chosen map read into a byte array
-            MapFS.Read(MapBytes, 0, MapBytes.Length);
-
-            byte[] tagbufferoffsetArray = new byte[0x4];
-            MapFS.Seek(0x18, 0);
-            MapFS.Read(tagbufferoffsetArray, 0, 4);
-
-            Console.WriteLine("Enter the Tag Resources offset for the map (found in the Zone tag)"); //These will eventually be replaced by something better
-            int TagResource = GetInt();
-
-            Console.WriteLine("Enter the Segments offset for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
-            int Segments = GetInt();
-
-            Console.WriteLine("Enter the Raw Pages offset for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
-            int RawPages = GetInt();
-
-            Console.WriteLine("Enter the Asset Datum Index for the bitmap you want to extract"); //This one will probably stay until I can have it read tag names instead which will be quite a journey.
-            int AssetIndex = GetInt();
-
-            int ResourceSegmentOffset = (AssetIndex * 64) + TagResource + 34; //Multiplies the index by the bytes in each block to get to the one we want, then adds 34 so we can get to the 
-
-            
-            
-            
-
-            short SegmentIndex = BitConverter.ToInt16(MapBytes, ResourceSegmentOffset); //Gets the segment index in tag resources and makes sure it's an int16
-
-            if (debug == true)
-            {
-                Console.WriteLine("Segment Index: " + SegmentIndex); //Prints the segment index so we can know it has the right one
-            }
-
-            int PrimaryPageAddress = Segments + (SegmentIndex * 16); //The primary page index read from segments
-            int SecondaryPageAddress = Segments + (SegmentIndex * 16) + 2; //Secondary page index
-
-            short PrimaryPageIndex = BitConverter.ToInt16(MapBytes, PrimaryPageAddress); //Again, gets those ints and makes them int16
-            short SecondaryPageIndex = BitConverter.ToInt16(MapBytes, SecondaryPageAddress); //These may be unncessary, but better safe than sorry
-
-            if (debug == true)
-            {
-                Console.WriteLine("Primary Page Index: " + PrimaryPageIndex); //So we know we have the right index again
-                Console.WriteLine("Secondary Page Index: " + SecondaryPageIndex);
-            }
-
-            int PrimaryRawPageAddress = (PrimaryPageIndex * 88) + RawPages; //The base address for the raw page we're looking for
-            int SecondaryRawPageAddress = (SecondaryPageIndex * 88) + RawPages; //The same, but for the secondary raw page
-
-            int PrimaryBlockOffset = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 8); //Like they say on the tin, all of these are reading from the Raw Pages block
-            int SecondaryBlockOffset = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 8);
-            int PrimaryCompressedBlockSize = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 12);
-            int SecondaryCompressedBlockSize = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 12);
-            int PrimaryUncompressedBlockSize = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 16);
-            int SecondaryUncompressedBlockSize = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 16);
-            int PrimaryCRCChecksum = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 20);
-            int SecondaryCRCChecksum = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 20);
-
-            if (debug == true)
-            {
-                Console.WriteLine("Primary Block Offset: " + PrimaryBlockOffset); //The above, printed so we can check it all over.
-                Console.WriteLine("Secondary Block Offset: " + SecondaryBlockOffset);
-                Console.WriteLine("Primary Compressed Block Size: " + PrimaryCompressedBlockSize);
-                Console.WriteLine("Secondary Compressed Block Size: " + SecondaryCompressedBlockSize);
-                Console.WriteLine("Primary Uncompressed Block Size: " + PrimaryUncompressedBlockSize);
-                Console.WriteLine("Secondary Uncompressed Block Size: " + SecondaryUncompressedBlockSize);
-                Console.WriteLine("Primary CRC Checksum: " + PrimaryCRCChecksum);
-                Console.WriteLine("Secondary CRC Checksum: " + SecondaryCRCChecksum);
-            }
-
-            bool PrimaryPageSelected = false;
-            bool SecondaryPageSelected = false;
-
-            if (PrimaryPageIndex > 0 && SecondaryPageIndex == 0) PrimaryPageSelected = true; //Each bitmap uses either a primary or secondary page
-            if (SecondaryPageIndex > 0 && PrimaryPageIndex == 0) SecondaryPageSelected = true; //This checks which one it has
-            while (PrimaryPageIndex > 0 && SecondaryPageIndex > 0 && PrimaryPageSelected == false && SecondaryPageSelected == false) //Some have both, where one page is a mipmap.
-            {
-                Console.WriteLine("Primary and Secondary pages available. Choose one (secondary recomended if you're not sure)"); //Asks the user which one they want if there's both
-                Console.WriteLine("Type 1 for the Primary Page or 2 for the Secondary Page");
-                try
-                {
-                    int answer = Convert.ToInt32(Console.ReadLine()); //Because I just know people will try to type a character instead.
-                    switch (answer)
-                    {
-                        case 1:
-                            PrimaryPageSelected = true;
-                            break;
-                        case 2:
-                            SecondaryPageSelected = true;
-                            break;
-                        default:
-                            Console.WriteLine("Please type either 1 or 2");
-                            break;
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("Please type a number.");
-                }
-                
-
-            }
-
-
-
-            if (SecondaryPageSelected == true)
-            {
-                Console.WriteLine("Attempting to extract Secondary Page (You will need to keep this in mind when reimporting)");
-                MapFS.Seek(SecondaryBlockOffset, 0); //Head over to the offset where our raw dds data starts
-                byte[] CompressedSecondaryPageData = new byte[SecondaryCompressedBlockSize]; //A byte array allocated to the size of the compressed data
-                MapFS.Read(CompressedSecondaryPageData, 0, SecondaryCompressedBlockSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
-                MapFS.Close(); //Closes the map stream for now
-
-                if (debug == true)
-                {
-                    Console.WriteLine("Please specify a name for the debug compressed data"); //Outputs the raw compressed data so we can check it over
-                    string CompressedFile = Console.ReadLine();
-                    File.WriteAllBytes(CompressedFile, CompressedSecondaryPageData);
-                }
-
-                byte[] DecompressedSecondaryPageData = new byte[SecondaryUncompressedBlockSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
-
-                Console.WriteLine("Please specify a filename for the decompressed bitmap"); //Once the data has been decompressed and had the DDS header added, save with this file name
-                string OutputFile = Console.ReadLine();
-
-                using MemoryStream SecondaryMemStream = new MemoryStream(CompressedSecondaryPageData); //Create a new memory stream with the compressed data
-                {
-                    using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
-                    {
-
-                        DFSecondary.Read(DecompressedSecondaryPageData, 128, SecondaryUncompressedBlockSize); //Read the decompressed data into a byte array
-                    }
-                }
-                //rebuild dds header here
-
-                File.WriteAllBytes(OutputFile, DecompressedSecondaryPageData);
-            }
-            if (PrimaryPageSelected == true)
-            {
-                Console.WriteLine("Attempting to extract Primary Page (You will need to keep this in mind when reimporting)");
-                MapFS.Seek(PrimaryBlockOffset, 0);
-                byte[] CompressedPrimaryPageData = new byte[PrimaryCompressedBlockSize]; //A byte array allocated to the size of the compressed data
-                MapFS.Read(CompressedPrimaryPageData, 0, PrimaryCompressedBlockSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
-                MapFS.Close(); //Closes the map stream for now
-
-                if (debug == true)
-                {
-                    Console.WriteLine("Please specify a name for the debug compressed data"); //Outputs the raw compressed data so we can check it over
-                    string CompressedFile = Console.ReadLine();
-                    File.WriteAllBytes(CompressedFile, CompressedPrimaryPageData);
-                }
-
-                byte[] DecompressedPrimaryPageData = new byte[PrimaryUncompressedBlockSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
-
-                Console.WriteLine("Please specify a filename for the decompressed bitmap"); //Once the data has been decompressed and had the DDS header added, save with this file name
-                string OutputFile = Console.ReadLine();
-
-                using MemoryStream PrimaryMemStream = new MemoryStream(CompressedPrimaryPageData); //Create a new memory stream with the compressed data
-                {
-                    using DeflateStream DFPrimary = new DeflateStream(PrimaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
-                    {
-
-                        DFPrimary.Read(DecompressedPrimaryPageData, 128, PrimaryUncompressedBlockSize); //Read the decompressed data into a byte array
-                    }
-                }
-                File.WriteAllBytes(OutputFile, DecompressedPrimaryPageData);
-            }
-            else if (PrimaryPageSelected == false && SecondaryPageSelected == false) Console.WriteLine("A page could not be selected");
-
-            /*for (int x = 0; x <= 128; x++) //Writes the DDS header
-            {
-                 switch(x)
-                {
-                    default:
-                        break;
-                    case 0:
-                        DecompressedSecondaryPageData[x] = 0x44;
-                        break;
-                    case 1:
-                        DecompressedSecondaryPageData[x] = 0x44;
-                        break;
-                    case 2:
-                        DecompressedSecondaryPageData[x] = 0x53;
-                        break;
-                    case 3:
-                        DecompressedSecondaryPageData[x] = 0x20;
-                        break;
-                    case 4:
-                        DecompressedSecondaryPageData[x] = 0x7C;
-                        break;
-
-
-                }
-            }*/
-
-
-            #region Decompress and save to file
-            /*using MemoryStream memStream = new MemoryStream(CompressedPrimaryPageData); //Region could be reused for debugging?
-            {
-                using FileStream fs2 = File.Create(OutputFile);
-                {
-                    using DeflateStream ds1 = new DeflateStream(memStream, CompressionMode.Decompress, true);
-                    {
-                        ds1.CopyTo(fs2);
-                    }
-                }
-            }*/
-            #endregion
-
-            /*
-            To do: Figure out DDS header creation from scratch, then figure out how to shove it into the byte[] or memory stream 
-            040_voi.map
-
-            1947B4DC = tag resources = 424129756
-
-            193ECC2C = segments = 423545900
-
-            19367524 = raw pages = 422999332
-
-            720 = battle rifle texture
-            */
-
-        }
-
-        public static void ImportBitmap(string DDSName, string FileName)
-        {
-
-            Console.WriteLine("Enter the Tag Resources offset for the map. (found in the Zone tag)"); //These will eventually be replaced by something better
-            int TagResource = GetInt();
-
-            Console.WriteLine("Enter the Segments offset for the map (found in the Zone tag)"); //But until I can understand the galaxy brain stuff behind how Assembly reads maps
-            int Segments = GetInt();
-
-            Console.WriteLine("Enter the Raw Pages offset for the map (found in the Zone tag)"); //These are here to stay. Ideally the GetInt() method will eventually accept hex though.
-            int RawPages = GetInt();
-
-            Console.WriteLine("Enter the Asset Datum Index for the bitmap you want to import to"); //This one will probably stay until I can have it read tag names instead which will be quite a journey.
-            int AssetIndex = GetInt();
-
-            int ResourceSegmentOffset = (AssetIndex * 64) + TagResource + 34; //Multiplies the index by the bytes in each block to get to the one we want, then adds 34 so we can get to the 
-
-            FileStream MapFS = new FileStream(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //The map read into a filestream
-            byte[] MapBytes = new byte[MapFS.Length]; //Byte array with the same size as our map
-            MapFS.Read(MapBytes, 0, MapBytes.Length); //Read the contents of our map into a byte array
-
-            short SegmentIndex = BitConverter.ToInt16(MapBytes, ResourceSegmentOffset); //Gets the segment index in tag resources and makes sure it's an int16
-
-            if (debug == true)
-            {
-                Console.WriteLine("Segment Index: " + SegmentIndex); //Prints the segment index so we can know it has the right one
-            }
-
-            int PrimaryPageAddress = Segments + (SegmentIndex * 16); //The primary page index read from segments
-            int SecondaryPageAddress = Segments + (SegmentIndex * 16) + 2; //Secondary page index
-
-            short PrimaryPageIndex = BitConverter.ToInt16(MapBytes, PrimaryPageAddress); //Again, gets those ints and makes them int16
-            short SecondaryPageIndex = BitConverter.ToInt16(MapBytes, SecondaryPageAddress); //These may be unncessary, but better safe than sorry
-
-            if (debug == true)
-            {
-                Console.WriteLine("Primary Page Index: " + PrimaryPageIndex); //So we know we have the right index again
-                Console.WriteLine("Secondary Page Index: " + SecondaryPageIndex);
-            }
-
-            int PrimaryRawPageAddress = (PrimaryPageIndex * 88) + RawPages; //The base address for the raw page we're looking for
-            int SecondaryRawPageAddress = (SecondaryPageIndex * 88) + RawPages; //The same, but for the secondary raw page
-
-            int PrimaryBlockOffset = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 8); //Like they say on the tin, all of these are reading from the Raw Pages block
-            int SecondaryBlockOffset = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 8);
-            int PrimaryCompressedBlockSize = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 12);
-            int SecondaryCompressedBlockSize = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 12);
-            int PrimaryUncompressedBlockSize = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 16);
-            int SecondaryUncompressedBlockSize = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 16);
-            int PrimaryCRCChecksum = BitConverter.ToInt32(MapBytes, PrimaryRawPageAddress + 20);
-            int SecondaryCRCChecksum = BitConverter.ToInt32(MapBytes, SecondaryRawPageAddress + 20);
-
-            if (debug == true)
-            {
-                Console.WriteLine("Primary Block Offset: " + PrimaryBlockOffset); //The above, printed so we can check it all over.
-                Console.WriteLine("Secondary Block Offset: " + SecondaryBlockOffset);
-                Console.WriteLine("Primary Compressed Block Size: " + PrimaryCompressedBlockSize);
-                Console.WriteLine("Secondary Compressed Block Size: " + SecondaryCompressedBlockSize);
-                Console.WriteLine("Primary Uncompressed Block Size: " + PrimaryUncompressedBlockSize);
-                Console.WriteLine("Secondary Uncompressed Block Size: " + SecondaryUncompressedBlockSize);
-                Console.WriteLine("Primary CRC Checksum: " + PrimaryCRCChecksum);
-                Console.WriteLine("Secondary CRC Checksum: " + SecondaryCRCChecksum);
-            }
-
-            bool SecondaryPageSelected = false;
-            bool PrimaryPageSelected = false;
-
-            while (PrimaryPageIndex > 0 && SecondaryPageIndex > 0 && PrimaryPageSelected == false && SecondaryPageSelected == false) //Some have both, where one page is a mipmap.
-            {
-                Console.WriteLine("Primary and Secondary pages available. Choose one (secondary recomended if you're not sure)"); //Asks the user which one they want if there's both
-                Console.WriteLine("Type 1 for the Primary Page or 2 for the Secondary Page");
-                try
-                {
-                    int answer = Convert.ToInt32(Console.ReadLine()); //Because I just know people will try to type a character instead.
-                    switch (answer)
-                    {
-                        case 1:
-                            PrimaryPageSelected = true;
-                            break;
-                        case 2:
-                            SecondaryPageSelected = true;
-                            break;
-                        default:
-                            Console.WriteLine("Please type either 1 or 2");
-                            break;
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("Please type a number.");
-                }
-
-
-            }
-
-            if (SecondaryPageSelected == true)
-            {
-                Console.WriteLine("Attempting to inject Secondary Page");
-                MapFS.Seek(SecondaryBlockOffset, 0); //Head over to the offset where the dds data starts
-
-                FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
-                byte[] DDSDecompressedBytes = new byte[SecondaryUncompressedBlockSize + 128]; //Empty byte array of the same size as the DDS file
-                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
-                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
-                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
-
-
-                byte[] DDSCompressedBytes = new byte[SecondaryCompressedBlockSize]; //Byte array to hold the recompressed data
-
-                using MemoryStream ms1 = new MemoryStream(DDSDecompressedBytes);
-                {
-                    using FileStream fs2 = new FileStream("TemporaryFile", FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
-                    {
-                        using DeflateStream ds1 = new DeflateStream(fs2, CompressionMode.Compress, true); //compress
-                        {
-                            ms1.CopyTo(ds1);
-                        }
-                    }
-                }
-
-                FileStream fs3 = new FileStream("TemporaryFile", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
-
-                fs3.Read(DDSCompressedBytes, 0, SecondaryCompressedBlockSize);
-
-                MapFS.Write(DDSCompressedBytes, 0, SecondaryCompressedBlockSize); //Writes our imported DDS into the file
-                MapFS.Close();
-                File.Delete("TemporaryFile");
-
-                //0x1F9EF198 = tag resources 0x1F90B120 = segments 0x1F8635D0 = raw pages 725 = smg index
-            }
-            if (PrimaryPageSelected == true)
-            {
-                Console.WriteLine("Attempting to inject Primary Page");
-                MapFS.Seek(PrimaryBlockOffset, 0); //Head over to the offset where the dds data starts
-
-                FileStream DDSStream = new FileStream(DDSName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
-                byte[] DDSDecompressedBytes = new byte[PrimaryUncompressedBlockSize + 128]; //Empty byte array of the same size as the DDS file
-                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
-                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
-                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
-
-
-                byte[] DDSCompressedBytes = new byte[PrimaryCompressedBlockSize]; //Byte array to hold the recompressed data
-
-                using MemoryStream ms1 = new MemoryStream(DDSDecompressedBytes);
-                {
-                    using FileStream fs2 = new FileStream("TemporaryFile", FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
-                    {
-                        using DeflateStream ds1 = new DeflateStream(fs2, CompressionMode.Compress, true); //compress
-                        {
-                            ms1.CopyTo(ds1);
-                        }
-                    }
-                }
-
-                FileStream fs3 = new FileStream("TemporaryFile", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
-
-                fs3.Read(DDSCompressedBytes, 0, PrimaryCompressedBlockSize);
-
-                MapFS.Write(DDSCompressedBytes, 0, PrimaryCompressedBlockSize); //Writes our imported DDS into the file
-                MapFS.Close();
-                File.Delete("TemporaryFile");
-            }
-        }
-
-
-
-            public static int GetInt() //Attempts to get an int from the user and restarts the loop if it's 0 or not a number
+        public static int GetInt() //Attempts to get an int from the user and restarts the loop if it's 0 or not a number
         {
             int myInt = 0;
             bool assigned = false;
@@ -682,7 +481,9 @@ namespace BitmapIO
                 }
             }
             return myInt; //Yay, you now have an int you can use at long last.
-        }
+        } 
+           
+            
 
         public static string GetFile() //Attempts to get a valid string from the console to use as input
         {
