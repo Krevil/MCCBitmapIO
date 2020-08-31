@@ -7,9 +7,12 @@ Automated bitmap (dds) extraction and importation
 - Decompression
 - Compression
 - Importation
+- Automatically gets tag offsets from map file
+- Creates DDS header from bitmap tag
 
 ## Planned features:
 
-- Automatically get tag offsets from map file
-- Create DDS header from bitmap tag
+- User Interface rather than console
+- Reach support
+
 
