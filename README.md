@@ -15,6 +15,8 @@ Automated bitmap (dds) extraction and importation
 
 ## Planned features:
 
+- File path truncation
+- Mipmap support
 - Reach support
 
 ## Special thanks
