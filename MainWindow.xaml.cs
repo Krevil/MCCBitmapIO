@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -18,8 +18,8 @@ using System.IO.Compression;
 using System.Globalization;
 using System.Linq.Expressions;
 
-namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for when the user does dumb stuff, add a logo, truncate filenames so they fit in the boxes
-{
+namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of adding support for mipmaps (at least those in the main resource)
+{ //Remember that 08 in the header needs to be 0A for mipmaps to show up
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -101,7 +101,7 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
 
             long ZoneTagAddress = ZoneTagLookUp(MapFS, address_mask, tag_table_address_real, tag_count, ZoneTagGroup);
 
-            Console.WriteLine("Enter a Asset Datum Index for the bitmap you want to extract or import");
+            //Console.WriteLine("Enter a Asset Datum Index for the bitmap you want to extract or import");
             //int AssetIndex = Convert.ToInt32(Console.ReadLine());
 
             ReadZone(MapFS, address_mask, ZoneTagAddress, tag_table_address_real, AssetIndex);
@@ -211,7 +211,9 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
             MapFS.Read(TagRefGroup, 0, 4);
             if (BitConverter.ToInt32(TagRefGroup, 0) != 1651078253)
             {
-                throw new Exception("Datum Index refers to non-bitmap tag - are you sure you're using the right number?"); //Makes sure we are finding a bitmap and not some other tag
+                MessageBox.Show("Datum Index refers to non-bitmap tag - are you sure you're using the right number?"); //Makes sure we are finding a bitmap and not some other tag
+                MapFS.Close();
+                return;
             }
             MapFS.Seek(TagResourceAddress_real + (0x40 * AssetIndex) + 0xC, 0); //Go to the datum index as there's some empty space in between the group magic
             byte[] Datum = new byte[0x4]; //Datums are confusing and weird.
@@ -237,7 +239,9 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
             }
             if (BitConverter.ToInt16(SecondaryPageIndex, 0) == 0 && BitConverter.ToInt16(PrimaryPageIndex, 0) == 0)
             {
-                throw new Exception("Something went wrong, no raw pages could be found"); //In case of weirdness
+                MessageBox.Show("Something went wrong, no raw pages could be found"); //In case of weirdness
+                MapFS.Close();
+                return;
             }
             else if (BitConverter.ToInt16(SecondaryPageIndex, 0) != 0)
             {
@@ -245,7 +249,9 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
             }
             if (PageIndex == 0)
             {
-                throw new Exception("Something went wrong, page couldn't be chosen"); //In case of even more weirdness
+                MessageBox.Show("Something went wrong, page couldn't be chosen"); //In case of even more weirdness
+                MapFS.Close();
+                return;
             }
 
             //Console.WriteLine("Page Index: " + PageIndex);
@@ -338,7 +344,7 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
                     H3Header.Format[1] = 0x58;
                     H3Header.Format[2] = 0x54;
                     H3Header.Format[3] = 0x35;
-                    Console.WriteLine("DDS Format was unsupported, defaulting to DXT5 - you may have issues loading this texture into an editor");
+                    //Console.WriteLine("DDS Format was unsupported, defaulting to DXT5 - you may have issues loading this texture into an editor");
                     break;
                 
             }
@@ -352,7 +358,7 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
 
                 byte[] DecompressedPageData = new byte[UncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
 
-                Console.WriteLine("Please specify a filename for the extracted file"); //Once the data has been decompressed and had the DDS header added, save with this file name
+                //Console.WriteLine("Please specify a filename for the extracted file"); //Once the data has been decompressed and had the DDS header added, save with this file name
                 //string IOFile = Console.ReadLine(); //Should have a UI box that requires it to end with .dds
 
                 using MemoryStream SecondaryMemStream = new MemoryStream(CompressedPageData); //Create a new memory stream with the compressed data
@@ -460,9 +466,17 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
                 //File.WriteAllBytes("TempBytesFile", DDSCompressedBytes);
 
                 if (CompressedBytesLength > CompressedSize)
-                    throw new Exception("File too large");
+                {
+                    MessageBox.Show("File size too large");
+                    MapFS.Close();
+                    return;
+                }
                 if (DecompressedBytesLength > UncompressedSize)
-                    throw new Exception("File too large");
+                {
+                    MessageBox.Show("File size too large");
+                    MapFS.Close();
+                    return;
+                }
 
                 MapFS.Write(DDSCompressedBytes, 0, CompressedBytesLength); //Writes our imported DDS into the file
 
@@ -483,7 +497,9 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
             }
             else if (mode != "e" && mode != "extract" && mode != "i" && mode != "import")
             {
-                Console.WriteLine("Neither extract or import was selected");
+                MessageBox.Show("Neither extract or import was selected");
+                MapFS.Close();
+                return;
             }
         }
         public static long GetTagAddress(byte[] tag_memory_address, long address_mask) //specifically for tags and tagblocks because of the int32 and * 4 requirement
@@ -500,7 +516,10 @@ namespace MCCBitmapIO //TODO: Add popups for file completion, error msgs for whe
             bool? result = openMap.ShowDialog(); //think ? just means it can be either true, false or nothing. nullables need more investigamation
             if (result == true)
                 mapName = openMap.FileName;
-            MapTextBox.Text = mapName;
+            if (mapName.Length <= 99)
+                MapTextBox.Text = mapName;
+            else if (mapName.Length > 99)
+                MapTextBox.Text = mapName.Substring(28);
         }
 
         private void IOButton_Click(object sender, RoutedEventArgs e)
