@@ -30,9 +30,9 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             InitializeComponent();
         }
 
-        public string mapName;
+        public string mapName = "";
         public static int AssetIndex = 0;
-        public static string IOFile = "default.dds";
+        public static string IOFile = "";
         public static string mode = "none";
         public static void ReadMap(string mapName) //actual main thing
         {
@@ -131,7 +131,6 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     MapFS.Read(datumindexsalt, 0, 2);
                     byte[] memoryaddress = new byte[0x4];
                     MapFS.Read(memoryaddress, 0, 4);
-                    //Console.WriteLine("Tag group index is: {0}", BitConverter.ToString(group_magic));
                     return memoryaddress;
                 }
             }
@@ -228,14 +227,17 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                                                                           //Console.WriteLine(SegmentsAddress_real);
             byte[] PrimaryPageIndex = new byte[0x2]; //Now what to do with these? 
             MapFS.Read(PrimaryPageIndex, 0, 2);
-            byte[] SecondaryPageIndex = new byte[0x2]; //For now, let's just grab one or the other.
+            byte[] SecondaryPageIndex = new byte[0x2]; 
             MapFS.Read(SecondaryPageIndex, 0, 2);
-            int PageIndex = 0;
+            int PrimaryPageInt = BitConverter.ToInt16(PrimaryPageIndex, 0);
+            int SecondaryPageInt = BitConverter.ToInt16(SecondaryPageIndex, 0);
+
+            bool TwoPages = true;
 
             //We check here what page there is to be used. If there's a secondary page we'll extract and use that over the primary, otherwise we just use the primary.
             if (BitConverter.ToInt16(SecondaryPageIndex, 0) == 0 && BitConverter.ToInt16(PrimaryPageIndex, 0) != 0)
             {
-                PageIndex = BitConverter.ToInt16(PrimaryPageIndex, 0);
+                TwoPages = false;
             }
             if (BitConverter.ToInt16(SecondaryPageIndex, 0) == 0 && BitConverter.ToInt16(PrimaryPageIndex, 0) == 0)
             {
@@ -245,31 +247,44 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             }
             else if (BitConverter.ToInt16(SecondaryPageIndex, 0) != 0)
             {
-                PageIndex = BitConverter.ToInt16(SecondaryPageIndex, 0);
+                TwoPages = true;
             }
-            if (PageIndex == 0)
+            /*if (PageIndex == 0)
             {
                 MessageBox.Show("Something went wrong, page couldn't be chosen"); //In case of even more weirdness
                 MapFS.Close();
                 return;
-            }
+            }*/
 
             //Console.WriteLine("Page Index: " + PageIndex);
-            MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0x8, 0); //Assuming the Page Index is assigned, go to it and then to the Block Offset, as that's what we need first
-                                                                            //Console.WriteLine(RawPagesAddress_real + (PageIndex * 0x58) + 0x8);
-            byte[] BlockOffset_byte = new byte[0x4]; //Place we go to for doing stuff with the bitmap
-            MapFS.Read(BlockOffset_byte, 0, 4);
-            byte[] CompressedSize_byte = new byte[0x4]; //The size it should be in the file
-            MapFS.Read(CompressedSize_byte, 0, 4);
-            byte[] UncompressedSize_byte = new byte[0x4]; //The size it should be when decompressed
-            MapFS.Read(UncompressedSize_byte, 0, 4);
+            MapFS.Seek(RawPagesAddress_real + (SecondaryPageInt * 0x58) + 0x8, 0); //Get Secondary page first if it exists
 
-            int BlockOffset = BitConverter.ToInt32(BlockOffset_byte, 0);
-            int CompressedSize = BitConverter.ToInt32(CompressedSize_byte, 0);
-            int UncompressedSize = BitConverter.ToInt32(UncompressedSize_byte, 0);
-            //Console.WriteLine(BlockOffset);
-            //Console.WriteLine("Uncompressed Size: " + UncompressedSize);
-            //Console.WriteLine("Compressed Size: " + CompressedSize);
+            byte[] SecondaryBlockOffset_byte = new byte[0x4]; //Place we go to for doing stuff with the bitmap
+            MapFS.Read(SecondaryBlockOffset_byte, 0, 4);
+            byte[] SecondaryCompressedSize_byte = new byte[0x4]; //The size it should be in the file
+            MapFS.Read(SecondaryCompressedSize_byte, 0, 4);
+            byte[] SecondaryUncompressedSize_byte = new byte[0x4]; //The size it should be when decompressed
+            MapFS.Read(SecondaryUncompressedSize_byte, 0, 4);
+
+            int SecondaryBlockOffset = BitConverter.ToInt32(SecondaryBlockOffset_byte, 0);
+            int SecondaryCompressedSize = BitConverter.ToInt32(SecondaryCompressedSize_byte, 0);
+            int SecondaryUncompressedSize = BitConverter.ToInt32(SecondaryUncompressedSize_byte, 0);
+
+            MapFS.Seek(RawPagesAddress_real + (PrimaryPageInt * 0x58) + 0x8, 0); //Get Primary Page afterwards 
+
+            byte[] PrimaryBlockOffset_byte = new byte[0x4]; //Place we go to for doing stuff with the bitmap
+            MapFS.Read(PrimaryBlockOffset_byte, 0, 4);
+            byte[] PrimaryCompressedSize_byte = new byte[0x4]; //The size it should be in the file
+            MapFS.Read(PrimaryCompressedSize_byte, 0, 4);
+            byte[] PrimaryUncompressedSize_byte = new byte[0x4]; //The size it should be when decompressed
+            MapFS.Read(PrimaryUncompressedSize_byte, 0, 4);
+
+            int PrimaryBlockOffset = BitConverter.ToInt32(PrimaryBlockOffset_byte, 0);
+            int PrimaryCompressedSize = BitConverter.ToInt32(PrimaryCompressedSize_byte, 0);
+            int PrimaryUncompressedSize = BitConverter.ToInt32(PrimaryUncompressedSize_byte, 0);
+
+
+
             //Moving on for a while, we need to go grab the bitmap info for remaking the DDS header. 
 
             int DatumIndex = BitConverter.ToInt32(Datum, 0) & 0xFFFF; //Tag index. Don't ask. I don't know.
@@ -296,55 +311,86 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             MapFS.Read(BitmapFormatArray, 0, 2); //this is an enum. 16 is DXT5 which is the ordinary but could be others.
             byte[] BitmapFlagsArray = new byte[0x2];
             MapFS.Read(BitmapFlagsArray, 0, 2); //Oh boy. This is gonna be fun to figure out. Like an enum but with multiple choice. (Actually not that bad, it's just addition)
+            MapFS.Seek(BitmapsAddress_real + 0x14, 0);
+            byte[] MipMapCountArray = new byte[0x1];
+            MapFS.Read(MipMapCountArray, 0, 1);
+
 
             //int BitmapWidth = BitConverter.ToInt32(BitmapWidthArray);
             //int BitmapHeight = BitConverter.ToInt32(BitmapHeightArray, 0);
             //int BitmapDepth = BitConverter.ToInt32(BitmapDepthArray, 0); 
             int BitmapFormat = BitConverter.ToInt16(BitmapFormatArray, 0);
+            //int MipMapCount = BitConverter.ToInt32(MipMapCountArray, 0);
             //int BitmapFlags = BitConverter.ToInt32(BitmapFlagsArray , 0); //unused
 
             //Now that we're done here, let's get to ripping out the headerless file
 
             DDSHeader H3Header = new DDSHeader();
 
+
             switch (BitmapFormat)
             {
+                case 11: //A8R8G8B8
+                    H3Header.Format[0] = 0x0;
+                    H3Header.Format[1] = 0x0;
+                    H3Header.Format[2] = 0x0;
+                    H3Header.Format[3] = 0x0;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x41;
+                    H3Header.PixelFormat[0xC] = 0x20;
+                    H3Header.PixelFormat[0x12] = 0xFF;
+                    H3Header.PixelFormat[0x15] = 0xFF;
+                    H3Header.PixelFormat[0x18] = 0xFF;
+                    H3Header.PixelFormat[0x1F] = 0xFF;
+                    break;
                 case 14: //DXT1
                     H3Header.Format[0] = 0x44;
                     H3Header.Format[1] = 0x58;
                     H3Header.Format[2] = 0x54;
                     H3Header.Format[3] = 0x31;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
                     break;
                 case 15: //DXT3
                     H3Header.Format[0] = 0x44;
                     H3Header.Format[1] = 0x58;
                     H3Header.Format[2] = 0x54;
                     H3Header.Format[3] = 0x33;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
                     break;
                 case 16: //DXT5
                     H3Header.Format[0] = 0x44;
                     H3Header.Format[1] = 0x58;
                     H3Header.Format[2] = 0x54;
                     H3Header.Format[3] = 0x35;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
                     break;
                 case 33: //DXN (ATI2)
                     H3Header.Format[0] = 0x41;
                     H3Header.Format[1] = 0x54;
                     H3Header.Format[2] = 0x49;
                     H3Header.Format[3] = 0x32;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
                     break;
-                case 39: //DXN_mono_alpha, no idea
+                /*case 39: //DXN_mono_alpha, no idea
                     H3Header.Format[0] = 0x41;
                     H3Header.Format[1] = 0x54;
                     H3Header.Format[2] = 0x49;
                     H3Header.Format[3] = 0x32;
-                    break;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
+                    break; */
                 default: //In case it's something else, just use DXT5, fuck it
                     H3Header.Format[0] = 0x44;
                     H3Header.Format[1] = 0x58;
                     H3Header.Format[2] = 0x54;
                     H3Header.Format[3] = 0x35;
-                    //Console.WriteLine("DDS Format was unsupported, defaulting to DXT5 - you may have issues loading this texture into an editor");
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;
+                    MessageBox.Show("DDS Format was unsupported, defaulting to DXT5 - you may have issues loading this texture into an editor");
                     break;
                 
             }
@@ -352,148 +398,371 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
 
             if (mode.ToLower() == "extract" || mode.ToLower() == "e")
             {
-                MapFS.Seek(BlockOffset, 0); //Head over to the offset where our raw dds data starts
-                byte[] CompressedPageData = new byte[CompressedSize]; //A byte array allocated to the size of the compressed data
-                MapFS.Read(CompressedPageData, 0, CompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
-
-                byte[] DecompressedPageData = new byte[UncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
-
-                //Console.WriteLine("Please specify a filename for the extracted file"); //Once the data has been decompressed and had the DDS header added, save with this file name
-                //string IOFile = Console.ReadLine(); //Should have a UI box that requires it to end with .dds
-
-                using MemoryStream SecondaryMemStream = new MemoryStream(CompressedPageData); //Create a new memory stream with the compressed data
+                if (TwoPages == false)
                 {
-                    using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
-                    {
+                    MapFS.Seek(PrimaryBlockOffset, 0); //Head over to the offset where our raw dds data starts
+                    byte[] PrimaryCompressedPageData = new byte[PrimaryCompressedSize]; //A byte array allocated to the size of the compressed data
+                    MapFS.Read(PrimaryCompressedPageData, 0, PrimaryCompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
 
-                        DFSecondary.Read(DecompressedPageData, 128, UncompressedSize); //Read the decompressed data into a byte array
-                    }
-                }
-                //Header stuff, yay
-                for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
-                {
-                    switch (b)
+                    byte[] DecompressedPageData = new byte[PrimaryUncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
+
+
+                    using MemoryStream SecondaryMemStream = new MemoryStream(PrimaryCompressedPageData); //Create a new memory stream with the compressed data
                     {
-                        case 0:
-                            DecompressedPageData[b] = 0x44;
-                            break;
-                        case 1:
-                            DecompressedPageData[b] = 0x44;
-                            break;
-                        case 2:
-                            DecompressedPageData[b] = 0x53;
-                            break;
-                        case 3:
-                            DecompressedPageData[b] = 0x20;
-                            break;
-                        case 4:
-                            DecompressedPageData[b] = 0x7C;
-                            break;
-                        case 8:
-                            DecompressedPageData[b] = 0x07;
-                            break;
-                        case 9:
-                            DecompressedPageData[b] = 0x10;
-                            break;
-                        case 0x0A:
-                            DecompressedPageData[b] = 0x08;
-                            break;
-                        case 0xC:
-                            DecompressedPageData[b] = BitmapHeightArray[0];
-                            break;
-                        case 0x0D:
-                            DecompressedPageData[b] = BitmapHeightArray[1];
-                            break;
-                        case 0x10:
-                            DecompressedPageData[b] = BitmapWidthArray[0];
-                            break;
-                        case 0x11:
-                            DecompressedPageData[b] = BitmapWidthArray[1];
-                            break;
-                        case 0x4C:
-                            DecompressedPageData[b] = 0x20;
-                            break;
-                        case 0x50:
-                            DecompressedPageData[b] = 0x04;
-                            break;
-                        case 0x54:
-                            DecompressedPageData[b] = H3Header.Format[0];
-                            break;
-                        case 0x55:
-                            DecompressedPageData[b] = H3Header.Format[1];
-                            break;
-                        case 0x56:
-                            DecompressedPageData[b] = H3Header.Format[2];
-                            break;
-                        case 0x57:
-                            DecompressedPageData[b] = H3Header.Format[3];
-                            break;
+                        using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
+                        {
+
+                            DFSecondary.Read(DecompressedPageData, 128, PrimaryUncompressedSize); //Read the decompressed data into a byte array
+                        }
                     }
+                    //Header stuff, yay
+                    for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
+                    {
+                        switch (b)
+                        {
+                            case 0:
+                                DecompressedPageData[b] = 0x44;
+                                break;
+                            case 1:
+                                DecompressedPageData[b] = 0x44;
+                                break;
+                            case 2:
+                                DecompressedPageData[b] = 0x53;
+                                break;
+                            case 3:
+                                DecompressedPageData[b] = 0x20;
+                                break;
+                            case 4:
+                                DecompressedPageData[b] = 0x7C;
+                                break;
+                            case 8:
+                                DecompressedPageData[b] = 0x07;
+                                break;
+                            case 9:
+                                DecompressedPageData[b] = 0x10;
+                                break;
+                            case 0x0A:
+                                DecompressedPageData[b] = 0x08;
+                                break;
+                            case 0xC:
+                                DecompressedPageData[b] = BitmapHeightArray[0];
+                                break;
+                            case 0x0D:
+                                DecompressedPageData[b] = BitmapHeightArray[1];
+                                break;
+                            case 0x10:
+                                DecompressedPageData[b] = BitmapWidthArray[0];
+                                break;
+                            case 0x11:
+                                DecompressedPageData[b] = BitmapWidthArray[1];
+                                break;
+                            case 0x4C:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0];
+                                break;
+                            case 0x50:
+                                DecompressedPageData[b] = H3Header.PixelFormat[4];
+                                break;
+                            case 0x54:
+                                DecompressedPageData[b] = H3Header.Format[0];
+                                break;
+                            case 0x55:
+                                DecompressedPageData[b] = H3Header.Format[1];
+                                break;
+                            case 0x56:
+                                DecompressedPageData[b] = H3Header.Format[2];
+                                break;
+                            case 0x57:
+                                DecompressedPageData[b] = H3Header.Format[3];
+                                break;
+                            case 0x58:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0xC];
+                                break;
+                            case 0x5E:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0x12];
+                                break;
+                            case 0x61:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0x15];
+                                break;
+                            case 0x64:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0x18];
+                                break;
+                            case 0x6B:
+                                DecompressedPageData[b] = H3Header.PixelFormat[0x1F];
+                                break;
+                        }
+                    }
+
+                    File.WriteAllBytes(IOFile, DecompressedPageData);
+                    string completiontext = "Done.";
+                    MessageBox.Show(completiontext);
+                    MapFS.Close();
                 }
-                File.WriteAllBytes(IOFile, DecompressedPageData);
-                string completiontext = "Done.";
-                MessageBox.Show(completiontext);
-                MapFS.Close();
+                if (TwoPages == true)
+                {
+                    MapFS.Seek(SecondaryBlockOffset, 0); //Head over to the offset where our raw dds data starts
+                    byte[] SecondaryCompressedPageData = new byte[SecondaryCompressedSize]; //A byte array allocated to the size of the compressed data
+                    MapFS.Read(SecondaryCompressedPageData, 0, SecondaryCompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
+
+                    MapFS.Seek(PrimaryBlockOffset, 0); //Head over to the offset where our raw dds data starts
+                    byte[] PrimaryCompressedPageData = new byte[PrimaryCompressedSize]; //A byte array allocated to the size of the compressed data
+                    MapFS.Read(PrimaryCompressedPageData, 0, PrimaryCompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
+
+
+                    byte[] SecondaryDecompressedPageData = new byte[SecondaryUncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
+                    byte[] PrimaryDecompressedPageData = new byte[PrimaryUncompressedSize]; //A byte array created with the size of the decompressed data
+
+
+                    using MemoryStream SecondaryMemStream = new MemoryStream(SecondaryCompressedPageData); //Create a new memory stream with the compressed data
+                    {
+                        using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
+                        {
+
+                            DFSecondary.Read(SecondaryDecompressedPageData, 128, SecondaryUncompressedSize); //Read the decompressed data into a byte array
+                        }
+                    }
+
+                    using MemoryStream PrimaryMemStream = new MemoryStream(PrimaryCompressedPageData); //Create a new memory stream with the compressed data
+                    {
+                        using DeflateStream DFPrimary = new DeflateStream(PrimaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
+                        {
+
+                            DFPrimary.Read(PrimaryDecompressedPageData, 0, PrimaryUncompressedSize); //Read the decompressed data into a byte array
+                        }
+                    }
+                    //Header stuff, yay
+                    for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
+                    {
+                        switch (b)
+                        {
+                            case 0:
+                                SecondaryDecompressedPageData[b] = 0x44;
+                                break;
+                            case 1:
+                                SecondaryDecompressedPageData[b] = 0x44;
+                                break;
+                            case 2:
+                                SecondaryDecompressedPageData[b] = 0x53;
+                                break;
+                            case 3:
+                                SecondaryDecompressedPageData[b] = 0x20;
+                                break;
+                            case 4:
+                                SecondaryDecompressedPageData[b] = 0x7C;
+                                break;
+                            case 8:
+                                SecondaryDecompressedPageData[b] = 0x07;
+                                break;
+                            case 9:
+                                SecondaryDecompressedPageData[b] = 0x10;
+                                break;
+                            case 0x0A:
+                                SecondaryDecompressedPageData[b] = 0x08;
+                                break;
+                            case 0xC:
+                                SecondaryDecompressedPageData[b] = BitmapHeightArray[0];
+                                break;
+                            case 0x0D:
+                                SecondaryDecompressedPageData[b] = BitmapHeightArray[1];
+                                break;
+                            case 0x10:
+                                SecondaryDecompressedPageData[b] = BitmapWidthArray[0];
+                                break;
+                            case 0x11:
+                                SecondaryDecompressedPageData[b] = BitmapWidthArray[1];
+                                break;
+                            case 0x4C:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0];
+                                break;
+                            case 0x50:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[4];
+                                break;
+                            case 0x54:
+                                SecondaryDecompressedPageData[b] = H3Header.Format[0];
+                                break;
+                            case 0x55:
+                                SecondaryDecompressedPageData[b] = H3Header.Format[1];
+                                break;
+                            case 0x56:
+                                SecondaryDecompressedPageData[b] = H3Header.Format[2];
+                                break;
+                            case 0x57:
+                                SecondaryDecompressedPageData[b] = H3Header.Format[3];
+                                break;
+                            case 0x58:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0xC];
+                                break;
+                            case 0x5E:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0x12];
+                                break;
+                            case 0x61:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0x15];
+                                break;
+                            case 0x64:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0x18];
+                                break;
+                            case 0x6B:
+                                SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0x1F];
+                                break;
+                        }
+                    }
+
+                    byte[] CombinedDecompressedPageData = SecondaryDecompressedPageData.Concat(PrimaryDecompressedPageData).ToArray();
+
+                    File.WriteAllBytes(IOFile, CombinedDecompressedPageData);
+                    string completiontext = "Done.";
+                    MessageBox.Show(completiontext);
+                    MapFS.Close();
+                }
             }
             if (mode.ToLower() == "import" || mode.ToLower() == "i")
             {
-                Console.WriteLine("Please type the name of the file you want to import");
-                //string IOFile = Convert.ToString(Console.ReadLine());
-                MapFS.Seek(BlockOffset, 0); //Head over to the offset where our raw dds data starts
-                FileStream DDSStream = new FileStream(IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
-                byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
-                DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
-                DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
-                DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
-
-
-
-
-                MemoryStream DecompressedStream = new MemoryStream(DDSDecompressedBytes);
-
-                MemoryStream CompressedStream = new MemoryStream();
-
-                using (DeflateStream df1 = new DeflateStream(CompressedStream, CompressionMode.Compress, true))
+                if (TwoPages == false)
                 {
-                    DecompressedStream.CopyTo(df1);
-                }
-                byte[] DDSCompressedBytes = new byte[CompressedStream.Length]; //Byte array to hold the recompressed data
-                int CompressedBytesLength = DDSCompressedBytes.Length;
-                int DecompressedBytesLength = DDSDecompressedBytes.Length;
-                //Console.WriteLine("Compressed size: {0} Uncompresssed size: {1}", CompressedBytesLength, DecompressedBytesLength);
-                CompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
-                CompressedStream.Read(DDSCompressedBytes, 0, CompressedBytesLength);
-                //File.WriteAllBytes("TempBytesFile", DDSCompressedBytes);
+                    Console.WriteLine("Please type the name of the file you want to import");
+                    //string IOFile = Convert.ToString(Console.ReadLine());
+                    MapFS.Seek(PrimaryBlockOffset, 0); //Head over to the offset where our raw dds data starts
+                    FileStream DDSStream = new FileStream(IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
+                    byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
+                    DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
+                    DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
+                    DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
 
-                if (CompressedBytesLength > CompressedSize)
-                {
-                    MessageBox.Show("File size too large");
+
+
+
+                    MemoryStream DecompressedStream = new MemoryStream(DDSDecompressedBytes);
+
+                    MemoryStream CompressedStream = new MemoryStream();
+
+                    using (DeflateStream df1 = new DeflateStream(CompressedStream, CompressionMode.Compress, true))
+                    {
+                        DecompressedStream.CopyTo(df1);
+                    }
+                    byte[] DDSCompressedBytes = new byte[CompressedStream.Length]; //Byte array to hold the recompressed data
+                    int CompressedBytesLength = DDSCompressedBytes.Length;
+                    int DecompressedBytesLength = DDSDecompressedBytes.Length;
+                    CompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
+                    CompressedStream.Read(DDSCompressedBytes, 0, CompressedBytesLength);
+
+                    if (CompressedBytesLength > PrimaryCompressedSize)
+                    {
+                        MessageBox.Show("File size too large");
+                        DDSStream.Close();
+                        MapFS.Close();
+                        return;
+                    }
+                    if (DecompressedBytesLength > PrimaryUncompressedSize)
+                    {
+                        MessageBox.Show("File size too large");
+                        DDSStream.Close();
+                        MapFS.Close();
+                        return;
+                    }
+
+                    MapFS.Write(DDSCompressedBytes, 0, CompressedBytesLength); //Writes our imported DDS into the file
+
+                    byte[] DecompressedLengthBytes = BitConverter.GetBytes(DecompressedBytesLength);
+                    byte[] CompressedLengthBytes = BitConverter.GetBytes(CompressedBytesLength);
+                    byte[] CombinedBytes = CompressedLengthBytes.Concat(DecompressedLengthBytes).ToArray();
+
+                    /*MapFS.Seek(RawPagesAddress_real + (PrimaryPageInt * 0x58) + 0xC, 0);
+                    MapFS.Write(CombinedBytes, 0, 8); //Fuck this shit, why does it not let me write two things? Makes no goddamn sense
+                    MapFS.Flush();*/
+                    string completiontext = "Done.";
+                    MessageBox.Show(completiontext);
                     MapFS.Close();
-                    return;
                 }
-                if (DecompressedBytesLength > UncompressedSize)
+                if (TwoPages == true)
                 {
-                    MessageBox.Show("File size too large");
+                    Console.WriteLine("Please type the name of the file you want to import");
+                    //string IOFile = Convert.ToString(Console.ReadLine());
+                    FileStream DDSStream = new FileStream(IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
+                    if (DDSStream.Length > PrimaryUncompressedSize + SecondaryUncompressedSize + 128)
+                    {
+                        MessageBox.Show("File too large - ensure the file is the same size as the original.");
+                        DDSStream.Close();
+                        MapFS.Close();
+                        return;
+                    }
+                    byte[] SecondaryDecompressedBytes = new byte[SecondaryUncompressedSize+128];
+                    byte[] PrimaryDecompressedBytes = new byte[PrimaryUncompressedSize];
+                    //byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
+                    DDSStream.Read(SecondaryDecompressedBytes, 0, SecondaryUncompressedSize+128); //Big assumption that the files are the same size, this will read all the secondary (not mipmaps) into a byte[]
+                    SecondaryDecompressedBytes = SecondaryDecompressedBytes.Skip(128).ToArray();
+                    DDSStream.Read(PrimaryDecompressedBytes, 0, PrimaryUncompressedSize); //Now the same for the mipmaps. Oh boy, how could this ever go wrong?
+                    DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
+
+                    MemoryStream SecondaryDecompressedStream = new MemoryStream(SecondaryDecompressedBytes);
+
+                    MemoryStream SecondaryCompressedStream = new MemoryStream();
+
+                    using (DeflateStream SecondaryDS = new DeflateStream(SecondaryCompressedStream, CompressionMode.Compress, true))
+                    {
+                        SecondaryDecompressedStream.CopyTo(SecondaryDS);
+                    }
+                    byte[] SecondaryCompressedBytes = new byte[SecondaryCompressedStream.Length]; //Byte array to hold the recompressed data
+                    int SecondaryCompressedBytesLength = SecondaryCompressedBytes.Length;
+                    int SecondaryDecompressedBytesLength = SecondaryDecompressedBytes.Length;
+                    SecondaryCompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
+                    SecondaryCompressedStream.Read(SecondaryCompressedBytes, 0, SecondaryCompressedBytesLength);
+
+                    MemoryStream PrimaryDecompressedStream = new MemoryStream(PrimaryDecompressedBytes);
+
+                    MemoryStream PrimaryCompressedStream = new MemoryStream();
+
+                    using (DeflateStream PrimaryDS = new DeflateStream(PrimaryCompressedStream, CompressionMode.Compress, true))
+                    {
+                        PrimaryDecompressedStream.CopyTo(PrimaryDS);
+                    }
+                    byte[] PrimaryCompressedBytes = new byte[PrimaryCompressedStream.Length]; //Byte array to hold the recompressed data
+                    int PrimaryCompressedBytesLength = PrimaryCompressedBytes.Length;
+                    int PrimaryDecompressedBytesLength = PrimaryDecompressedBytes.Length;
+                    PrimaryCompressedStream.Seek(0, 0); //WHY DOES IT GET SET TO THE END? THAT MAKES NO SENSE!
+                    PrimaryCompressedStream.Read(PrimaryCompressedBytes, 0, PrimaryCompressedBytesLength);
+
+                    /*if (CompressedBytesLength > PrimaryCompressedSize + SecondaryCompressedSize)
+                    {
+                        MessageBox.Show("File size too large");
+                        MapFS.Close();
+                        return;
+                    }
+                    if (DecompressedBytesLength > PrimaryUncompressedSize + SecondaryUncompressedSize)
+                    {
+                        MessageBox.Show("File size too large");
+                        MapFS.Close();
+                        return;
+                    }*/
+
+                    MapFS.Seek(SecondaryBlockOffset, 0); //Head over to the offset where our secondary raw dds data starts
+                    MapFS.Write(SecondaryCompressedBytes, 0, SecondaryCompressedBytesLength); //Writes our imported DDS into the file
+                    MapFS.Flush();
+
+                    MapFS.Seek(PrimaryBlockOffset, 0);
+                    MapFS.Write(PrimaryCompressedBytes, 0, PrimaryCompressedBytesLength);
+                    MapFS.Flush();
+
+                    /*
+                    byte[] SecondaryDecompressedLengthBytes = BitConverter.GetBytes(SecondaryDecompressedBytesLength); 
+                    byte[] SecondaryCompressedLengthBytes = BitConverter.GetBytes(SecondaryCompressedBytesLength);
+                    byte[] SecondaryCombinedBytes = SecondaryCompressedLengthBytes.Concat(SecondaryDecompressedLengthBytes).ToArray();
+
+                    MapFS.Seek(RawPagesAddress_real + (SecondaryPageInt * 0x58) + 0xC, 0);
+                    MapFS.Write(SecondaryCombinedBytes, 0, 8); //Fuck this shit, why does it not let me write two things? Makes no goddamn sense
+                    MapFS.Flush();
+
+                    byte[] PrimaryDecompressedLengthBytes = BitConverter.GetBytes(PrimaryDecompressedBytesLength);
+                    byte[] PrimaryCompressedLengthBytes = BitConverter.GetBytes(PrimaryCompressedBytesLength);
+                    byte[] PrimaryCombinedBytes = PrimaryCompressedLengthBytes.Concat(PrimaryDecompressedLengthBytes).ToArray();
+
+                    MapFS.Seek(RawPagesAddress_real + (PrimaryPageInt * 0x58) + 0xC, 0);
+                    MapFS.Write(PrimaryCombinedBytes, 0, 8);
+                    MapFS.Flush();
+                    */
+
+                    string completiontext = "Done.";
+                    MessageBox.Show(completiontext);
                     MapFS.Close();
-                    return;
                 }
-
-                MapFS.Write(DDSCompressedBytes, 0, CompressedBytesLength); //Writes our imported DDS into the file
-
-                byte[] DecompressedLengthBytes = BitConverter.GetBytes(DecompressedBytesLength);
-                byte[] CompressedLengthBytes = BitConverter.GetBytes(CompressedBytesLength);
-                byte[] CombinedBytes = CompressedLengthBytes.Concat(DecompressedLengthBytes).ToArray();
-
-                MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0xC, 0);
-                MapFS.Write(CombinedBytes, 0, 8); //Fuck this shit, why does it not let me write two things? Makes no goddamn sense
-                MapFS.Flush();
-                string completiontext = "Done.";
-                MessageBox.Show(completiontext);
-                MapFS.Close();
-
-
-                //MapFS.Seek(RawPagesAddress_real + (PageIndex * 0x58) + 0x10, 0);
-                //MapFS.Write(DecompressedLengthBytes, 0, 4);
             }
             else if (mode != "e" && mode != "extract" && mode != "i" && mode != "import")
             {
@@ -516,10 +785,10 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             bool? result = openMap.ShowDialog(); //think ? just means it can be either true, false or nothing. nullables need more investigamation
             if (result == true)
                 mapName = openMap.FileName;
-            if (mapName.Length <= 99)
+            if (mapName.Length <= 199)
                 MapTextBox.Text = mapName;
-            else if (mapName.Length > 99)
-                MapTextBox.Text = mapName.Substring(28);
+            else if (mapName.Length > 199)
+                MapTextBox.Text = mapName;//.Substring(28);
         }
 
         private void IOButton_Click(object sender, RoutedEventArgs e)
@@ -533,7 +802,11 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                 if (result == true)
                 {
                     IOFile = openIO.FileName;
-                    IOTextBox.Text = IOFile;
+                    if (IOFile.Length <= 99)
+                        IOTextBox.Text = IOFile;
+                    else if (IOFile.Length > 99)
+                        IOTextBox.Text = IOFile;//.Substring(28);
+                    
                 }
             }
             if (mode == "extract")
@@ -542,7 +815,10 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                 if (result == true)
                 {
                     IOFile = saveIO.FileName;
-                    IOTextBox.Text = IOFile;
+                    if (IOFile.Length <= 99)
+                        IOTextBox.Text = IOFile;
+                    else if (IOFile.Length > 99)
+                        IOTextBox.Text = IOFile;//.Substring(28);
                 }
             }
         }
@@ -587,6 +863,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
     class DDSHeader
     {
         public byte[] Format = new byte[4];
+        public byte[] PixelFormat = new byte[0x20];
     }
 }
 
