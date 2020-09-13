@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:MCCBitmapIO"
         mc:Ignorable="d"
-        Title="MCC Bitmap IO" Height="230" Width="810">
+        Title="MCC Bitmap IO" Height="230" Width="810" Icon="MCCBitmapIO.ico" Visibility="Visible" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <Style TargetType="Button">
             <Setter Property="FontFamily" Value="Corbel" />
@@ -17,8 +17,8 @@
         <Label Content="Bitmap Index:" HorizontalAlignment="Left" Height="30" Margin="0,90,0,0"  VerticalAlignment="Top" Width="85" Background="{x:Null}" Foreground="#FF919192" BorderBrush="{x:Null}"/>
         <Label Content="Output/Input:" HorizontalAlignment="Left" Height="30" Margin="0,120,0,0"  VerticalAlignment="Top" Width="85" Background="{x:Null}" Foreground="#FF919192" BorderBrush="{x:Null}"/>
         <TextBox x:Name="MapTextBox" IsReadOnly="true" HorizontalAlignment="Left" Height="20" Margin="87,23,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="655" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" MaxLines="1" />
-        <TextBox x:Name="IndexBox" HorizontalAlignment="Left" Height="20" Margin="87,93,0,0" TextWrapping="Wrap" Text="0" VerticalAlignment="Top" Width="65" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" TextAlignment="Justify" TextChanged="IndexBox_TextChanged"/>
-        <TextBox x:Name="IOTextBox" IsReadOnly="true" HorizontalAlignment="Left" Height="20" Margin="87,123,0,0" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="655" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" TextChanged="IOTextBox_TextChanged"/>
+        <TextBox x:Name="IndexBox" HorizontalAlignment="Left" Height="20" Margin="87,93,0,0" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="65" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" TextAlignment="Justify" TextChanged="IndexBox_TextChanged"/>
+        <TextBox x:Name="IOTextBox" IsReadOnly="true" HorizontalAlignment="Left" Margin="87,123,0,0" TextWrapping="Wrap" Text="" Width="655" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" TextChanged="IOTextBox_TextChanged" Height="20" VerticalAlignment="Top"/>
         <Button x:Name="MapButton" Content="[.....]" HorizontalAlignment="Left" Margin="747,23,0,0" VerticalAlignment="Top" Width="45" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" Click="MapButton_Click"/>
         <Button x:Name="IOButton" Content="[.....]" HorizontalAlignment="Left" Margin="747,123,0,0" VerticalAlignment="Top" Width="45" Background="#FF1F1F1F" Foreground="White" BorderBrush="#FF939393" Click="IOButton_Click"/>
         <CheckBox x:Name="ExtractButton" Content="Extract" HorizontalAlignment="Left" Margin="77,66,0,0" VerticalAlignment="Top" Background="#FF939393" BorderBrush="#FF1F1F1F" Foreground="White" Checked="ExtractButton_Checked"/>
