@@ -1,7 +1,7 @@
 # MCCBitmapIO
 Automated bitmap (dds) extraction and importation
 
-![Logo](https://raw.githubusercontent.com/Krevil/MCCBitmapIO/master/MCCBitmapIO.png)
+![Logo](https://raw.githubusercontent.com/Krevil/MCCBitmapIO/master/MCCBitmapIO_new.png)
 
 ## Current features:
 
@@ -12,11 +12,11 @@ Automated bitmap (dds) extraction and importation
 - Automatically gets tag offsets from map file
 - Creates DDS header from bitmap tag
 - User Interface
+- Mipmap support
 
 ## Planned features:
 
 - File path truncation
-- Mipmap support
 - Reach support
 
 ## Special thanks
