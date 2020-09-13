@@ -31,7 +31,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
         }
 
         public string mapName = "";
-        public static int AssetIndex = 0;
+        public static int AssetIndex;
         public static string IOFile = "";
         public static string mode = "none";
         public static void ReadMap(string mapName) //actual main thing
@@ -312,7 +312,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             byte[] BitmapFlagsArray = new byte[0x2];
             MapFS.Read(BitmapFlagsArray, 0, 2); //Oh boy. This is gonna be fun to figure out. Like an enum but with multiple choice. (Actually not that bad, it's just addition)
             MapFS.Seek(BitmapsAddress_real + 0x14, 0);
-            byte[] MipMapCountArray = new byte[0x1];
+            byte[] MipMapCountArray = new byte[0x2];
             MapFS.Read(MipMapCountArray, 0, 1);
 
 
@@ -320,13 +320,21 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             //int BitmapHeight = BitConverter.ToInt32(BitmapHeightArray, 0);
             //int BitmapDepth = BitConverter.ToInt32(BitmapDepthArray, 0); 
             int BitmapFormat = BitConverter.ToInt16(BitmapFormatArray, 0);
-            //int MipMapCount = BitConverter.ToInt32(MipMapCountArray, 0);
+            int MipMapCount = BitConverter.ToInt16(MipMapCountArray, 0);
             //int BitmapFlags = BitConverter.ToInt32(BitmapFlagsArray , 0); //unused
 
             //Now that we're done here, let's get to ripping out the headerless file
 
             DDSHeader H3Header = new DDSHeader();
-
+            switch (BitmapFormat)
+            {
+                default:
+                    H3Header.Size = 0x80;
+                    break;
+                case 33:
+                    H3Header.Size = 0x94;
+                    break;
+            }
 
             switch (BitmapFormat)
             {
@@ -367,11 +375,18 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     H3Header.PixelFormat[0] = 0x20;
                     H3Header.PixelFormat[4] = 0x04;
                     break;
-                case 33: //DXN (ATI2)
+                /*case 33: //DXN (ATI2)
                     H3Header.Format[0] = 0x41;
                     H3Header.Format[1] = 0x54;
                     H3Header.Format[2] = 0x49;
                     H3Header.Format[3] = 0x32;
+                    H3Header.PixelFormat[0] = 0x20;
+                    H3Header.PixelFormat[4] = 0x04;*/
+                case 33: //DXT10 
+                    H3Header.Format[0] = 0x44;
+                    H3Header.Format[1] = 0x58;
+                    H3Header.Format[2] = 0x31;
+                    H3Header.Format[3] = 0x30;
                     H3Header.PixelFormat[0] = 0x20;
                     H3Header.PixelFormat[4] = 0x04;
                     break;
@@ -404,7 +419,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     byte[] PrimaryCompressedPageData = new byte[PrimaryCompressedSize]; //A byte array allocated to the size of the compressed data
                     MapFS.Read(PrimaryCompressedPageData, 0, PrimaryCompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
 
-                    byte[] DecompressedPageData = new byte[PrimaryUncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
+                    byte[] DecompressedPageData = new byte[PrimaryUncompressedSize + H3Header.Size]; //A byte array created with the size of the decompressed data plus the DDS header
 
 
                     using MemoryStream SecondaryMemStream = new MemoryStream(PrimaryCompressedPageData); //Create a new memory stream with the compressed data
@@ -412,11 +427,11 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                         using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
                         {
 
-                            DFSecondary.Read(DecompressedPageData, 128, PrimaryUncompressedSize); //Read the decompressed data into a byte array
+                            DFSecondary.Read(DecompressedPageData, H3Header.Size, PrimaryUncompressedSize); //Read the decompressed data into a byte array
                         }
                     }
                     //Header stuff, yay
-                    for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
+                    for (int b = 0; b < H3Header.Size+1; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
                     {
                         switch (b)
                         {
@@ -443,6 +458,8 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                                 break;
                             case 0x0A:
                                 DecompressedPageData[b] = 0x08;
+                                if (MipMapCount > 0)
+                                    DecompressedPageData[b] = 0x0A;
                                 break;
                             case 0xC:
                                 DecompressedPageData[b] = BitmapHeightArray[0];
@@ -455,6 +472,9 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                                 break;
                             case 0x11:
                                 DecompressedPageData[b] = BitmapWidthArray[1];
+                                break;
+                            case 0x1C:
+                                DecompressedPageData[b] = MipMapCountArray[0];
                                 break;
                             case 0x4C:
                                 DecompressedPageData[b] = H3Header.PixelFormat[0];
@@ -489,6 +509,16 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                             case 0x6B:
                                 DecompressedPageData[b] = H3Header.PixelFormat[0x1F];
                                 break;
+                            case 0x80:
+                                DecompressedPageData[b] = 0x54;
+                                break;
+                            case 0x84:
+                                DecompressedPageData[b] = 0x03;
+                                break;
+                            case 0x8C:
+                                DecompressedPageData[b] = 0x01;
+                                break;
+
                         }
                     }
 
@@ -508,7 +538,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     MapFS.Read(PrimaryCompressedPageData, 0, PrimaryCompressedSize); //Reads from the stream into the previous byte array, but only the amount of bytes we need
 
 
-                    byte[] SecondaryDecompressedPageData = new byte[SecondaryUncompressedSize + 128]; //A byte array created with the size of the decompressed data plus the DDS header
+                    byte[] SecondaryDecompressedPageData = new byte[SecondaryUncompressedSize + H3Header.Size]; //A byte array created with the size of the decompressed data plus the DDS header
                     byte[] PrimaryDecompressedPageData = new byte[PrimaryUncompressedSize]; //A byte array created with the size of the decompressed data
 
 
@@ -517,7 +547,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                         using DeflateStream DFSecondary = new DeflateStream(SecondaryMemStream, CompressionMode.Decompress, true); //Read the memory stream into a deflatestream to decompress it
                         {
 
-                            DFSecondary.Read(SecondaryDecompressedPageData, 128, SecondaryUncompressedSize); //Read the decompressed data into a byte array
+                            DFSecondary.Read(SecondaryDecompressedPageData, H3Header.Size, SecondaryUncompressedSize); //Read the decompressed data into a byte array
                         }
                     }
 
@@ -530,7 +560,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                         }
                     }
                     //Header stuff, yay
-                    for (int b = 0; b < 129; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
+                    for (int b = 0; b < H3Header.Size+1; b++) //Loops through the length of the header setting each thing as it needs. For now we're just going to do the bare minimum.
                     {
                         switch (b)
                         {
@@ -557,6 +587,8 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                                 break;
                             case 0x0A:
                                 SecondaryDecompressedPageData[b] = 0x08;
+                                if (MipMapCount > 0)
+                                    SecondaryDecompressedPageData[b] = 0x0A;
                                 break;
                             case 0xC:
                                 SecondaryDecompressedPageData[b] = BitmapHeightArray[0];
@@ -569,6 +601,9 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                                 break;
                             case 0x11:
                                 SecondaryDecompressedPageData[b] = BitmapWidthArray[1];
+                                break;
+                            case 0x1C:
+                                SecondaryDecompressedPageData[b] = MipMapCountArray[0];
                                 break;
                             case 0x4C:
                                 SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0];
@@ -603,6 +638,15 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                             case 0x6B:
                                 SecondaryDecompressedPageData[b] = H3Header.PixelFormat[0x1F];
                                 break;
+                            case 0x80:
+                                SecondaryDecompressedPageData[b] = 0x54;
+                                break;
+                            case 0x84:
+                                SecondaryDecompressedPageData[b] = 0x03;
+                                break;
+                            case 0x8C:
+                                SecondaryDecompressedPageData[b] = 0x01;
+                                break;
                         }
                     }
 
@@ -625,7 +669,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
                     DDSStream.Read(DDSDecompressedBytes, 0, DDSDecompressedBytes.Length); //The byte array now contains the bytes from our file. We have to instead use DDSBytes.Length as DDSStream.Length returns a long instead of an Int32
                     DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
-                    DDSDecompressedBytes = DDSDecompressedBytes.Skip(128).ToArray();
+                    DDSDecompressedBytes = DDSDecompressedBytes.Skip(H3Header.Size).ToArray();
 
 
 
@@ -677,18 +721,18 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                     Console.WriteLine("Please type the name of the file you want to import");
                     //string IOFile = Convert.ToString(Console.ReadLine());
                     FileStream DDSStream = new FileStream(IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite); //Reads the input DDS File into a stream
-                    if (DDSStream.Length > PrimaryUncompressedSize + SecondaryUncompressedSize + 128)
+                    if (DDSStream.Length > PrimaryUncompressedSize + SecondaryUncompressedSize + H3Header.Size)
                     {
                         MessageBox.Show("File too large - ensure the file is the same size as the original.");
                         DDSStream.Close();
                         MapFS.Close();
                         return;
                     }
-                    byte[] SecondaryDecompressedBytes = new byte[SecondaryUncompressedSize+128];
+                    byte[] SecondaryDecompressedBytes = new byte[SecondaryUncompressedSize+ H3Header.Size];
                     byte[] PrimaryDecompressedBytes = new byte[PrimaryUncompressedSize];
                     //byte[] DDSDecompressedBytes = new byte[DDSStream.Length]; //Empty byte array of the same size as the DDS file
-                    DDSStream.Read(SecondaryDecompressedBytes, 0, SecondaryUncompressedSize+128); //Big assumption that the files are the same size, this will read all the secondary (not mipmaps) into a byte[]
-                    SecondaryDecompressedBytes = SecondaryDecompressedBytes.Skip(128).ToArray();
+                    DDSStream.Read(SecondaryDecompressedBytes, 0, SecondaryUncompressedSize+ H3Header.Size); //Big assumption that the files are the same size, this will read all the secondary (not mipmaps) into a byte[]
+                    SecondaryDecompressedBytes = SecondaryDecompressedBytes.Skip(H3Header.Size).ToArray();
                     DDSStream.Read(PrimaryDecompressedBytes, 0, PrimaryUncompressedSize); //Now the same for the mipmaps. Oh boy, how could this ever go wrong?
                     DDSStream.Close(); //We don't need the DDSStream anymore so we'll close it.
 
@@ -821,6 +865,8 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
                         IOTextBox.Text = IOFile;//.Substring(28);
                 }
             }
+            if (mode == "none")
+                MessageBox.Show("Please select a file mode.");
         }
 
         private void ExtractButton_Checked(object sender, RoutedEventArgs e)
@@ -848,7 +894,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
             }
             catch
             {
-                IndexBox.Text = "0";
+                IndexBox.Text = "";
             }
         }
         private void BeginButton_Click(object sender, RoutedEventArgs e)
@@ -862,6 +908,7 @@ namespace MCCBitmapIO //TODO: Truncate filenames even better, find some way of a
 
     class DDSHeader
     {
+        public int Size;
         public byte[] Format = new byte[4];
         public byte[] PixelFormat = new byte[0x20];
     }
